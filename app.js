@@ -131,8 +131,27 @@
       if (modalRoot) modalRoot.innerHTML = '';
       return;
     }
+
+    if (!IS_ADMIN_APP) {
+      app.innerHTML = `
+        <div class="public-page">
+          ${renderPublicHeader()}
+          <main class="public-main">
+            <div id="topbar"></div>
+            <div id="main-content"></div>
+          </main>
+          ${renderPublicFooter()}
+        </div>
+        <div id="modal-root"></div>
+      `;
+      renderTopbar();
+      renderMain();
+      renderModal();
+      return;
+    }
+
     app.innerHTML = `
-      <div class="app-shell ${IS_ADMIN_APP ? 'admin-shell' : 'public-shell'}">
+      <div class="app-shell admin-shell">
         <aside class="sidebar ${state.sidebarCollapsed ? 'collapsed' : ''}">
           <div class="brand">
             <div class="brand-mark">RP</div>
@@ -146,13 +165,11 @@
             <span class="badge ${isApiConfigured() ? 'api' : 'demo'}">${isApiConfigured() ? 'เชื่อม Apps Script' : 'Demo Mode'}</span>
           </div>
           <nav class="nav">
-            ${IS_ADMIN_APP ? adminNavHTML() : publicNavHTML()}
+            ${adminNavHTML()}
           </nav>
           <div class="sidebar-card">
-            <b>${IS_ADMIN_APP ? 'สถานะเจ้าหน้าที่' : 'Public View'}</b><br>
-            ${IS_ADMIN_APP
-              ? `${escapeHTML(state.session.name)}<br><span class="small">${escapeHTML(state.session.role)}</span><br><button class="btn secondary" style="margin-top:10px" data-action="logout">ออกจากระบบ</button>`
-              : `ผู้ใช้ทั่วไปสามารถดูข้อมูลสาธารณะได้<br><button class="btn" style="margin-top:10px" data-action="go-admin">เข้าสู่ระบบเจ้าหน้าที่</button>`}
+            <b>สถานะเจ้าหน้าที่</b><br>
+            ${escapeHTML(state.session.name)}<br><span class="small">${escapeHTML(state.session.role)}</span><br><button class="btn secondary" style="margin-top:10px" data-action="logout">ออกจากระบบ</button>
           </div>
           <div class="sidebar-card">
             <b>การใช้งาน</b><br>
@@ -171,16 +188,53 @@
     renderModal();
   }
 
+
+
+  function renderPublicHeader() {
+    return `<header class="site-header">
+      <div class="site-header-inner">
+        <button class="brand brand-public" data-action="view" data-view="calendar" aria-label="กลับหน้าปฏิทิน">
+          <div class="brand-mark">RP</div>
+          <div>
+            <h1>${escapeHTML(APP_NAME)}</h1>
+            <p>${escapeHTML(ORG_NAME)}</p>
+          </div>
+        </button>
+        <nav class="public-nav" aria-label="เมนูสาธารณะ">
+          ${publicNavHTML()}
+        </nav>
+        <div class="public-header-actions">
+          <span class="badge ${state.source === 'google_sheet' ? 'api' : 'demo'}">${state.source === 'google_sheet' ? 'Google Sheet API' : 'Demo Mode'}</span>
+          <button class="btn secondary" data-action="refresh">รีเฟรช</button>
+          <button class="btn warning" data-action="go-admin">เข้าสู่ระบบเจ้าหน้าที่</button>
+        </div>
+      </div>
+    </header>`;
+  }
+
+  function renderPublicFooter() {
+    const year = new Date().getFullYear() + 543;
+    return `<footer class="site-footer">
+      <div class="site-footer-inner">
+        <div>
+          <b>${escapeHTML(APP_NAME)}</b><br>
+          <span>ระบบแสดงปฏิทินภาพรวมงานสาธารณะ เชื่อมข้อมูลจาก Google Sheet และ Google Drive ผ่าน Apps Script</span>
+        </div>
+        <div class="footer-meta">© ${year} ${escapeHTML(ORG_NAME)}</div>
+      </div>
+    </footer>`;
+  }
+
   function navButton(view, label, icon) {
     return `<button class="${state.view === view ? 'active' : ''}" data-action="view" data-view="${view}"><span>${icon}</span>${label}</button>`;
   }
   function publicNavHTML() {
     return [
-      navButton('dashboard','ภาพรวม','🏠'),
-      navButton('calendar','ปฏิทิน','🗓️'),
+      navButton('calendar','ปฏิทินภาพรวม','🗓️'),
       navButton('report','รายงาน','📊')
     ].join('');
   }
+
 
   function adminNavHTML() {
     return [
@@ -193,22 +247,37 @@
 
 
   function renderTopbar() {
-    const titleMap = { dashboard:'ภาพรวมงาน', calendar:'ปฏิทินรายเดือน', admin:'จัดการรายการงาน', report:'รายงานสรุป', login:'เข้าสู่ระบบ' };
-    document.getElementById('topbar').innerHTML = `
+    const titleMap = { dashboard:'สรุปภาพรวมงาน', calendar:'ปฏิทินภาพรวมงาน', admin:'จัดการรายการงาน', report:'รายงานสรุป', login:'เข้าสู่ระบบ' };
+    const topbar = document.getElementById('topbar');
+    if (!topbar) return;
+    if (!IS_ADMIN_APP) {
+      topbar.innerHTML = `<div class="public-hero">
+        <div>
+          <div class="eyebrow">Public View</div>
+          <h2>${titleMap[state.view] || 'ปฏิทินภาพรวมงาน'}</h2>
+          <p>แสดงข้อมูลกิจกรรมและงานประจำเดือนจาก Google Sheet โดยอ่านข้อมูลผ่าน Google Apps Script</p>
+        </div>
+        <div class="public-hero-summary">
+          <span>${state.events.length} รายการทั้งหมด</span>
+          <span>${monthEvents().length} รายการในเดือนนี้</span>
+        </div>
+      </div>`;
+      return;
+    }
+    topbar.innerHTML = `
       <div class="topbar">
         <div>
           <h2>${titleMap[state.view] || 'ภาพรวมงาน'}</h2>
-          <p>${IS_ADMIN_APP ? 'ระบบหลังบ้านสำหรับเจ้าหน้าที่: จัดการรายการงานและไฟล์แนบ' : 'Public View: ข้อมูลกลางจาก Google Sheet ผ่าน Apps Script'}</p>
+          <p>ระบบหลังบ้านสำหรับเจ้าหน้าที่: จัดการรายการงานและไฟล์แนบ</p>
         </div>
         <div class="actions">
           <span class="badge ${state.source === 'google_sheet' ? 'api' : 'demo'}">${state.source === 'google_sheet' ? 'Google Sheet API' : 'Demo Mode'}</span>
           <button class="btn secondary" data-action="refresh">รีเฟรช</button>
-          ${IS_ADMIN_APP
-            ? `<button class="btn warning" data-action="logout">ออกจากระบบ</button>`
-            : `<button class="btn warning" data-action="go-admin">Admin Portal</button>`}
+          <button class="btn warning" data-action="logout">ออกจากระบบ</button>
         </div>
       </div>`;
   }
+
 
   function renderMain() {
     const main = document.getElementById('main-content');
@@ -226,6 +295,7 @@
   }
 
   function renderDashboard() {
+    if (!IS_ADMIN_APP) return renderCalendar();
     const events = filteredEvents();
     const today = todayISO();
     const upcoming = events.filter(e => e.status !== 'ยกเลิก' && e.start_date >= today).sort((a,b) => a.start_date.localeCompare(b.start_date));
@@ -252,6 +322,7 @@
         </section>
       </div>`;
   }
+
 
   function filtersHTML() {
     const groups = ['ทั้งหมด'].concat(unique(state.events.map(e => e.work_group).filter(Boolean)));
@@ -301,13 +372,50 @@
     const days = [];
     for (let i = 0; i < 42; i++) { const d = new Date(start); d.setDate(start.getDate() + i); days.push(d); }
     const names = ['อา','จ','อ','พ','พฤ','ศ','ส'];
-    return `<section class="card">
+    const monthly = monthEvents();
+    const calendarCard = `<section class="card calendar-card">
       <div class="calendar-head">
-        <div><h3 style="margin:0">${monthName(month)} ${year + 543}</h3><p class="muted small">คลิกที่รายการเพื่อดูรายละเอียดและไฟล์แนบ</p></div>
+        <div><h3 style="margin:0">${monthName(month)} ${year + 543}</h3><p class="muted small">คลิกที่รายการในปฏิทินเพื่อดูรายละเอียดและไฟล์แนบ</p></div>
         <div class="actions"><button class="btn secondary" data-action="prev-month">ก่อนหน้า</button><button class="btn secondary" data-action="today-month">เดือนนี้</button><button class="btn secondary" data-action="next-month">ถัดไป</button></div>
       </div>
       <div class="calendar-grid">${names.map(n => `<div class="day-name">${n}</div>`).join('')}${days.map(dayCell).join('')}</div>
     </section>`;
+    const listCard = `<aside class="card month-list-card">
+      <div class="section-title"><h3>รายการงานของเดือนนี้</h3><span class="small muted">${monthly.length} รายการ</span></div>
+      <div class="month-list">
+        ${monthly.length ? monthly.map(monthListItem).join('') : `<div class="empty">ยังไม่มีรายการงานในเดือนนี้</div>`}
+      </div>
+    </aside>`;
+    return `<div class="public-calendar-layout">${calendarCard}${listCard}</div>`;
+  }
+
+
+
+  function monthEvents() {
+    const year = state.monthDate.getFullYear();
+    const month = state.monthDate.getMonth();
+    const start = toISO(new Date(year, month, 1));
+    const end = toISO(new Date(year, month + 1, 0));
+    return filteredEvents().filter(e => {
+      const eventStart = String(e.start_date || '').slice(0, 10);
+      const eventEnd = String(e.end_date || e.start_date || '').slice(0, 10);
+      return eventStart <= end && eventEnd >= start;
+    }).sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')) || String(a.start_time || '').localeCompare(String(b.start_time || '')));
+  }
+
+  function monthListItem(e) {
+    return `<button class="month-list-item" data-action="open-event" data-id="${escapeAttr(e.id)}">
+      <div class="month-list-date">
+        <b>${formatDayOnly(e.start_date)}</b>
+        <span>${formatMonthShort(e.start_date)}</span>
+      </div>
+      <div class="month-list-body">
+        <div class="month-list-title">${escapeHTML(e.title)}</div>
+        <div class="event-meta">${escapeHTML(e.start_time || '-')} - ${escapeHTML(e.end_time || '-')} · ${escapeHTML(e.location || '-')}</div>
+        <div class="event-meta">${escapeHTML(e.work_group || '-')}</div>
+      </div>
+      <div>${statusBadge(e.status)}</div>
+    </button>`;
   }
 
   function dayCell(date) {
@@ -704,6 +812,19 @@
   function toISO(date) { return new Intl.DateTimeFormat('sv-SE', { timeZone:TIMEZONE, year:'numeric', month:'2-digit', day:'2-digit' }).format(date); }
   function addMonths(date, months) { const d = new Date(date); d.setMonth(d.getMonth() + months); return d; }
   function monthName(index) { return ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'][index]; }
+  function formatDayOnly(iso) {
+    if (!iso) return '-';
+    const value = String(iso).slice(0, 10);
+    const day = Number(value.split('-')[2]);
+    return day || '-';
+  }
+  function formatMonthShort(iso) {
+    if (!iso) return '-';
+    const value = String(iso).slice(0, 10);
+    const parts = value.split('-').map(Number);
+    if (!parts[0] || !parts[1]) return '-';
+    return monthName(parts[1] - 1).slice(0, 3);
+  }
   function formatDate(iso) { if (!iso) return '-'; const [y,m,d] = String(iso).slice(0,10).split('-').map(Number); if (!y || !m || !d) return iso; return new Date(y,m-1,d).toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' }); }
   function formatDateTime(value) { if (!value) return '-'; const d = new Date(value); if (Number.isNaN(d.getTime())) return value; return d.toLocaleString('th-TH', { timeZone:TIMEZONE, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }); }
   function formatBytes(bytes) { const n = Number(bytes || 0); if (!n) return '-'; if (n < 1024) return n + ' B'; if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB'; return (n/1024/1024).toFixed(2) + ' MB'; }
