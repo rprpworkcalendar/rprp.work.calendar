@@ -6,6 +6,8 @@
   const APP_NAME = CONFIG.APP_NAME || 'ปฏิทินภาพรวมงาน';
   const ORG_NAME = CONFIG.ORG_NAME || 'องค์กร';
   const MAX_UPLOAD_MB = Number(CONFIG.MAX_UPLOAD_MB || 5);
+  const APP_MODE = document.body.dataset.appMode || 'public';
+  const IS_ADMIN_APP = APP_MODE === 'admin';
   const SESSION_KEY = 'rp_calendar_native_session';
   const TIMEZONE = 'Asia/Bangkok';
 
@@ -46,6 +48,7 @@
   async function init() {
     render();
     bindEvents();
+    if (IS_ADMIN_APP && !state.session) return;
     await loadData();
   }
 
@@ -58,8 +61,14 @@
 
       if (action === 'toggle-sidebar') { state.sidebarCollapsed = !state.sidebarCollapsed; render(); return; }
       if (action === 'view') { setView(target.dataset.view); return; }
+      if (action === 'go-admin') { window.location.href = './admin.html'; return; }
+      if (action === 'go-public') { window.location.href = './index.html'; return; }
       if (action === 'refresh') { await loadData(); return; }
-      if (action === 'login-view') { state.view = 'login'; render(); return; }
+      if (action === 'login-view') {
+        if (IS_ADMIN_APP) { state.view = 'login'; render(); }
+        else { window.location.href = './admin.html'; }
+        return;
+      }
       if (action === 'logout') { logout(); return; }
       if (action === 'open-event') { await openEvent(id); return; }
       if (action === 'close-modal') { closeModal(); return; }
@@ -98,7 +107,7 @@
     try {
       const [eventsRes, logsRes] = await Promise.all([
         apiGet('listEvents'),
-        apiGet('listLogs').catch(() => ({ ok: true, data: [] }))
+        (IS_ADMIN_APP && state.session) ? apiPost('listLogs', {}, true).catch(() => ({ ok: true, data: [] })) : Promise.resolve({ ok: true, data: [] })
       ]);
       state.events = Array.isArray(eventsRes.data) ? eventsRes.data.filter(item => !item.deleted_at) : [];
       state.logs = Array.isArray(logsRes.data) ? logsRes.data : [];
@@ -116,8 +125,14 @@
 
   function render() {
     const app = document.getElementById('app');
+    if (IS_ADMIN_APP && !state.session) {
+      app.innerHTML = renderOfficialLogin();
+      const modalRoot = document.getElementById('modal-root');
+      if (modalRoot) modalRoot.innerHTML = '';
+      return;
+    }
     app.innerHTML = `
-      <div class="app-shell">
+      <div class="app-shell ${IS_ADMIN_APP ? 'admin-shell' : 'public-shell'}">
         <aside class="sidebar ${state.sidebarCollapsed ? 'collapsed' : ''}">
           <div class="brand">
             <div class="brand-mark">RP</div>
@@ -131,14 +146,13 @@
             <span class="badge ${isApiConfigured() ? 'api' : 'demo'}">${isApiConfigured() ? 'เชื่อม Apps Script' : 'Demo Mode'}</span>
           </div>
           <nav class="nav">
-            ${navButton('dashboard','ภาพรวม','🏠')}
-            ${navButton('calendar','ปฏิทิน','🗓️')}
-            ${navButton('admin','จัดการรายการ','📝')}
-            ${navButton('report','รายงาน','📊')}
+            ${IS_ADMIN_APP ? adminNavHTML() : publicNavHTML()}
           </nav>
           <div class="sidebar-card">
-            <b>สถานะผู้ใช้</b><br>
-            ${state.session ? `${escapeHTML(state.session.name)}<br><span class="small">${escapeHTML(state.session.role)}</span><br><button class="btn secondary" style="margin-top:10px" data-action="logout">ออกจากระบบ</button>` : `ยังไม่ได้เข้าสู่ระบบ<br><button class="btn" style="margin-top:10px" data-action="login-view">เข้าสู่ระบบ</button>`}
+            <b>${IS_ADMIN_APP ? 'สถานะเจ้าหน้าที่' : 'Public View'}</b><br>
+            ${IS_ADMIN_APP
+              ? `${escapeHTML(state.session.name)}<br><span class="small">${escapeHTML(state.session.role)}</span><br><button class="btn secondary" style="margin-top:10px" data-action="logout">ออกจากระบบ</button>`
+              : `ผู้ใช้ทั่วไปสามารถดูข้อมูลสาธารณะได้<br><button class="btn" style="margin-top:10px" data-action="go-admin">เข้าสู่ระบบเจ้าหน้าที่</button>`}
           </div>
           <div class="sidebar-card">
             <b>การใช้งาน</b><br>
@@ -160,6 +174,23 @@
   function navButton(view, label, icon) {
     return `<button class="${state.view === view ? 'active' : ''}" data-action="view" data-view="${view}"><span>${icon}</span>${label}</button>`;
   }
+  function publicNavHTML() {
+    return [
+      navButton('dashboard','ภาพรวม','🏠'),
+      navButton('calendar','ปฏิทิน','🗓️'),
+      navButton('report','รายงาน','📊')
+    ].join('');
+  }
+
+  function adminNavHTML() {
+    return [
+      navButton('admin','จัดการรายการ','📝'),
+      navButton('calendar','ปฏิทิน','🗓️'),
+      navButton('dashboard','ภาพรวม','🏠'),
+      navButton('report','รายงาน','📊')
+    ].join('');
+  }
+
 
   function renderTopbar() {
     const titleMap = { dashboard:'ภาพรวมงาน', calendar:'ปฏิทินรายเดือน', admin:'จัดการรายการงาน', report:'รายงานสรุป', login:'เข้าสู่ระบบ' };
@@ -167,12 +198,14 @@
       <div class="topbar">
         <div>
           <h2>${titleMap[state.view] || 'ภาพรวมงาน'}</h2>
-          <p>ข้อมูลกลางจาก Google Sheet และเอกสารแนบจาก Google Drive ผ่าน Apps Script</p>
+          <p>${IS_ADMIN_APP ? 'ระบบหลังบ้านสำหรับเจ้าหน้าที่: จัดการรายการงานและไฟล์แนบ' : 'Public View: ข้อมูลกลางจาก Google Sheet ผ่าน Apps Script'}</p>
         </div>
         <div class="actions">
           <span class="badge ${state.source === 'google_sheet' ? 'api' : 'demo'}">${state.source === 'google_sheet' ? 'Google Sheet API' : 'Demo Mode'}</span>
           <button class="btn secondary" data-action="refresh">รีเฟรช</button>
-          ${canEdit() ? `<button class="btn" data-action="view" data-view="admin">เพิ่ม/แก้ไขงาน</button>` : `<button class="btn warning" data-action="login-view">เข้าสู่ระบบ</button>`}
+          ${IS_ADMIN_APP
+            ? `<button class="btn warning" data-action="logout">ออกจากระบบ</button>`
+            : `<button class="btn warning" data-action="go-admin">Admin Portal</button>`}
         </div>
       </div>`;
   }
@@ -189,7 +222,7 @@
     if (state.view === 'calendar') main.innerHTML = renderCalendar();
     if (state.view === 'admin') main.innerHTML = renderAdmin();
     if (state.view === 'report') main.innerHTML = renderReport();
-    if (state.view === 'login') main.innerHTML = renderLogin();
+    if (state.view === 'login') main.innerHTML = IS_ADMIN_APP ? renderOfficialLoginInner() : renderPublicLoginNotice();
   }
 
   function renderDashboard() {
@@ -377,13 +410,48 @@
     return `<div class="table-wrap"><table class="table"><thead><tr><th>เวลา</th><th>Action</th><th>ผู้ใช้</th><th>รายละเอียด</th></tr></thead><tbody>${state.logs.slice(0, 50).map(l => `<tr><td>${formatDateTime(l.datetime)}</td><td>${escapeHTML(l.action || '-')}</td><td>${escapeHTML(l.user_name || l.user_id || '-')}</td><td>${escapeHTML(l.detail || '-')}</td></tr>`).join('')}</tbody></table></div>`;
   }
 
-  function renderLogin(message) {
-    return `<section class="card login-box"><h3>${escapeHTML(message || 'เข้าสู่ระบบ')}</h3><p class="muted small">บัญชีเริ่มต้นหลัง setup: admin@example.com / 1234 และ staff@example.com / 1234</p>
-      <form data-form="login">
-        <div class="field"><label>Email</label><input class="input" type="email" name="email" required placeholder="admin@example.com"></div>
-        <div class="field" style="margin-top:12px"><label>PIN</label><input class="input" type="password" name="pin" required placeholder="1234"></div>
-        <button class="btn" style="margin-top:14px;width:100%" type="submit">เข้าสู่ระบบ</button>
-      </form>
+  function renderPublicLoginNotice() {
+    return `<section class="card login-box"><h3>เข้าสู่ระบบเจ้าหน้าที่</h3><p class="muted small">หน้า Public ใช้สำหรับแสดงข้อมูลทั่วไป หากต้องการจัดการรายการงาน กรุณาเข้าสู่ระบบผ่าน Admin Portal</p><button class="btn" data-action="go-admin">ไปหน้า Admin Portal</button></section>`;
+  }
+
+  function renderOfficialLogin() {
+    return `<main class="admin-login-layout">
+      ${renderOfficialLoginInner()}
+      <aside class="admin-login-panel admin-login-panel-brand" aria-hidden="true">
+        <div class="admin-login-brand-grid"></div>
+        <div class="admin-login-brand-card">
+          <div class="admin-login-brand-mark"><span></span><span></span><span></span></div>
+          <h2>Royal Park Rajapruek</h2>
+          <p>${escapeHTML(APP_NAME)}</p>
+          <span class="admin-login-brand-chip">Google Sheet + Drive ready</span>
+        </div>
+      </aside>
+    </main><div id="modal-root"></div>`;
+  }
+
+  function renderOfficialLoginInner(message) {
+    return `<section class="admin-login-panel admin-login-panel-form" aria-labelledby="adminLoginTitle">
+      <a href="./index.html" class="admin-login-back"><span aria-hidden="true">‹</span><span>กลับหน้าแรก</span></a>
+      <div class="admin-login-card admin-login-portal-card">
+        <div class="text-center mb-2">
+          <div class="admin-login-eyebrow">Admin Portal</div>
+          <h1 id="adminLoginTitle">เข้าสู่ระบบเจ้าหน้าที่</h1>
+          <p class="text-muted text-small">สำหรับเข้าระบบหลังบ้านเท่านั้น</p>
+        </div>
+        ${message ? `<div class="alert alert-danger mb-2">${escapeHTML(message)}</div>` : ''}
+        <form data-form="login" class="admin-login-form">
+          <div class="form-group">
+            <label for="admin_username">ชื่อผู้ใช้</label>
+            <input id="admin_username" type="text" name="username" class="form-control" required autocomplete="username" placeholder="กรอกอีเมลหรือรหัสผู้ใช้">
+          </div>
+          <div class="form-group">
+            <label for="admin_password">รหัสผ่าน</label>
+            <input id="admin_password" type="password" name="password" class="form-control" required autocomplete="current-password" placeholder="กรอกรหัสผ่าน/PIN">
+          </div>
+          <button type="submit" class="btn btn-primary btn-block mt-1">เข้าสู่ระบบ</button>
+        </form>
+        <div class="admin-login-footer"><p class="admin-login-footer-note">เข้าสู่ระบบเพื่อจัดการปฏิทิน รายการงาน และไฟล์แนบ</p></div>
+      </div>
     </section>`;
   }
 
@@ -424,15 +492,26 @@
 
   async function handleLogin(form) {
     const data = formData(form);
+    const username = data.username || data.email || '';
+    const password = data.password || data.pin || '';
     try {
-      const res = await apiPost('login', { email:data.email, pin:data.pin }, false);
+      const res = await apiPost('login', { email:username, username, pin:password, password, portal:'admin' }, false);
       if (!res.ok) throw new Error(res.message || 'เข้าสู่ระบบไม่สำเร็จ');
-      state.session = res.data;
+      const nextSession = res.data;
+      if (!['staff','admin','super_admin'].includes(String(nextSession.role || ''))) {
+        throw new Error('บัญชีนี้ไม่มีสิทธิ์เข้าระบบหลังบ้าน');
+      }
+      state.session = nextSession;
       saveSession(state.session);
       state.view = 'admin';
-      render();
+      await loadData();
     } catch (err) {
-      alert(err.message || String(err));
+      if (IS_ADMIN_APP) {
+        const app = document.getElementById('app');
+        if (app) app.innerHTML = renderOfficialLogin(err.message || String(err));
+      } else {
+        alert(err.message || String(err));
+      }
     }
   }
 
@@ -593,12 +672,28 @@
   }
 
   function formData(form) { return Object.fromEntries(new FormData(form).entries()); }
-  function setView(view) { state.view = view; state.sidebarCollapsed = window.innerWidth < 920; render(); }
-  function logout() { localStorage.removeItem(SESSION_KEY); state.session = null; state.view = 'dashboard'; render(); }
+  function setView(view) {
+    if (!IS_ADMIN_APP && view === 'admin') { window.location.href = './admin.html'; return; }
+    if (IS_ADMIN_APP && !state.session) { state.view = 'login'; render(); return; }
+    state.view = view; state.sidebarCollapsed = window.innerWidth < 920; render();
+  }
+  function logout() {
+    localStorage.removeItem(SESSION_KEY);
+    state.session = null;
+    state.events = [];
+    state.logs = [];
+    state.view = IS_ADMIN_APP ? 'login' : 'dashboard';
+    render();
+  }
   function readSession() { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; } }
   function saveSession(session) { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); }
   function isApiConfigured() { return /^https:\/\/script\.google\.com\/macros\/s\//.test(API_URL); }
-  function getInitialView() { return (location.hash || '').replace('#','') || document.body.dataset.initialView || 'dashboard'; }
+  function getInitialView() {
+    const requested = (location.hash || '').replace('#','') || document.body.dataset.initialView || 'dashboard';
+    if (!IS_ADMIN_APP && requested === 'admin') return 'dashboard';
+    if (IS_ADMIN_APP && !readSession() && requested !== 'login') return 'login';
+    return requested;
+  }
   function unique(arr) { return Array.from(new Set(arr)); }
   function countBy(arr, key) { return arr.reduce((acc,item) => { const k = typeof key === 'function' ? key(item) : item[key]; acc[k || '-'] = (acc[k || '-'] || 0) + 1; return acc; }, {}); }
   function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
