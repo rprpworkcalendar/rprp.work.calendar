@@ -18,6 +18,7 @@
     source: isApiConfigured() ? 'google_sheet' : 'demo',
     events: [],
     logs: [],
+    users: [],
     session: readSession(),
     query: '',
     status: 'ทั้งหมด',
@@ -26,6 +27,8 @@
     selectedEvent: null,
     attachments: [],
     editingEvent: null,
+    editingUser: null,
+    userQuery: '',
     isSaving: false,
     isUploading: false,
     sidebarCollapsed: window.innerWidth < 920
@@ -41,6 +44,11 @@
 
   const demoLogs = [
     { log_id:'LOG-DEMO-001', datetime:new Date().toISOString(), action:'เปิดระบบ', user_id:'demo', user_name:'ระบบตัวอย่าง', detail:'โหลดข้อมูลตัวอย่างเนื่องจากยังไม่ได้ตั้งค่า Apps Script URL', event_id:'', client:'demo' }
+  ];
+
+  const demoUsers = [
+    { user_id:'USR-ADMIN-001', name:'ผู้ดูแลระบบ', email:'admin@example.com', role:'admin', work_group:'อำนวยการ', is_active:'TRUE', created_at:new Date().toISOString() },
+    { user_id:'USR-STAFF-001', name:'เจ้าหน้าที่ทดสอบ', email:'staff@example.com', role:'staff', work_group:'วิชาการและการเรียนรู้', is_active:'TRUE', created_at:new Date().toISOString() }
   ];
 
   document.addEventListener('DOMContentLoaded', init);
@@ -75,6 +83,9 @@
       if (action === 'new-event') { state.editingEvent = null; renderAdminForm(); return; }
       if (action === 'edit-event') { beginEditEvent(id); return; }
       if (action === 'delete-event') { await deleteEvent(id); return; }
+      if (action === 'new-user') { state.editingUser = null; renderUserForm(); return; }
+      if (action === 'edit-user') { beginEditUser(id); return; }
+      if (action === 'delete-user') { await deleteUser(id); return; }
       if (action === 'prev-month') { state.monthDate = addMonths(state.monthDate, -1); renderMain(); return; }
       if (action === 'next-month') { state.monthDate = addMonths(state.monthDate, 1); renderMain(); return; }
       if (action === 'today-month') { state.monthDate = new Date(); renderMain(); return; }
@@ -87,12 +98,14 @@
       event.preventDefault();
       if (form.dataset.form === 'login') await handleLogin(form);
       if (form.dataset.form === 'event') await handleEventSave(form);
+      if (form.dataset.form === 'user') await handleUserSave(form);
     });
 
     document.body.addEventListener('input', (event) => {
       if (event.target.matches('[data-filter="query"]')) { state.query = event.target.value; renderMain(); }
       if (event.target.matches('[data-filter="status"]')) { state.status = event.target.value; renderMain(); }
       if (event.target.matches('[data-filter="group"]')) { state.group = event.target.value; renderMain(); }
+      if (event.target.matches('[data-filter="user-query"]')) { state.userQuery = event.target.value; renderMain(); }
     });
 
     document.body.addEventListener('change', async (event) => {
@@ -105,17 +118,20 @@
     state.error = '';
     renderMain();
     try {
-      const [eventsRes, logsRes] = await Promise.all([
+      const [eventsRes, logsRes, usersRes] = await Promise.all([
         apiGet('listEvents'),
-        (IS_ADMIN_APP && state.session) ? apiPost('listLogs', {}, true).catch(() => ({ ok: true, data: [] })) : Promise.resolve({ ok: true, data: [] })
+        (IS_ADMIN_APP && state.session) ? apiPost('listLogs', {}, true).catch(() => ({ ok: true, data: [] })) : Promise.resolve({ ok: true, data: [] }),
+        (IS_ADMIN_APP && isAdmin()) ? apiPost('listUsers', {}, true).catch(() => ({ ok: true, data: [] })) : Promise.resolve({ ok: true, data: [] })
       ]);
       state.events = Array.isArray(eventsRes.data) ? eventsRes.data.filter(item => !item.deleted_at) : [];
       state.logs = Array.isArray(logsRes.data) ? logsRes.data : [];
+      state.users = Array.isArray(usersRes.data) ? usersRes.data : [];
       state.source = eventsRes.source || (isApiConfigured() ? 'google_sheet' : 'demo');
     } catch (err) {
       state.error = err.message || String(err);
       state.events = demoEvents;
       state.logs = demoLogs;
+      state.users = demoUsers;
       state.source = 'demo';
     } finally {
       state.loading = false;
@@ -237,17 +253,19 @@
 
 
   function adminNavHTML() {
-    return [
+    const items = [
       navButton('admin','จัดการรายการ','📝'),
       navButton('calendar','ปฏิทิน','🗓️'),
       navButton('dashboard','ภาพรวม','🏠'),
       navButton('report','รายงาน','📊')
-    ].join('');
+    ];
+    if (isAdmin()) items.splice(1, 0, navButton('users','จัดการผู้ใช้','👥'));
+    return items.join('');
   }
 
 
   function renderTopbar() {
-    const titleMap = { dashboard:'สรุปภาพรวมงาน', calendar:'ปฏิทินภาพรวมงาน', admin:'จัดการรายการงาน', report:'รายงานสรุป', login:'เข้าสู่ระบบ' };
+    const titleMap = { dashboard:'สรุปภาพรวมงาน', calendar:'ปฏิทินภาพรวมงาน', admin:'จัดการรายการงาน', users:'จัดการผู้ใช้', report:'รายงานสรุป', login:'เข้าสู่ระบบ' };
     const topbar = document.getElementById('topbar');
     if (!topbar) return;
     if (!IS_ADMIN_APP) {
@@ -290,6 +308,7 @@
     if (state.view === 'dashboard') main.innerHTML = renderDashboard();
     if (state.view === 'calendar') main.innerHTML = renderCalendar();
     if (state.view === 'admin') main.innerHTML = renderAdmin();
+    if (state.view === 'users') main.innerHTML = renderUsers();
     if (state.view === 'report') main.innerHTML = renderReport();
     if (state.view === 'login') main.innerHTML = IS_ADMIN_APP ? renderOfficialLoginInner() : renderPublicLoginNotice();
   }
@@ -486,6 +505,121 @@
       <thead><tr><th>วันที่</th><th>ชื่องาน</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
       <tbody>${events.map(e => `<tr><td>${formatDate(e.start_date)}</td><td><b>${escapeHTML(e.title)}</b><div class="event-meta">${escapeHTML(e.location || '-')}</div></td><td>${statusBadge(e.status)}</td><td class="nowrap"><button class="btn secondary" data-action="open-event" data-id="${escapeAttr(e.id)}">ดู</button> <button class="btn warning" data-action="edit-event" data-id="${escapeAttr(e.id)}">แก้ไข</button> <button class="btn danger" data-action="delete-event" data-id="${escapeAttr(e.id)}">ลบ</button></td></tr>`).join('')}</tbody>
     </table></div>`;
+  }
+
+  function renderUsers() {
+    if (!state.session) return renderLogin('กรุณาเข้าสู่ระบบก่อนจัดการผู้ใช้');
+    if (!isAdmin()) return `<div class="error">บัญชีนี้ไม่มีสิทธิ์จัดการผู้ใช้</div>`;
+    const users = filteredUsers();
+    return `<div class="grid" style="grid-template-columns:minmax(340px,.8fr) minmax(0,1.2fr)">
+      <section class="card"><div id="user-form-root">${userFormHTML(state.editingUser)}</div></section>
+      <section class="card">
+        <div class="section-title"><h3>บัญชีผู้ใช้งาน</h3><button class="btn secondary" data-action="new-user">เพิ่มผู้ใช้ใหม่</button></div>
+        <div class="card" style="box-shadow:none;margin:0 0 14px;padding:0">
+          <input class="input" placeholder="ค้นหาชื่อ อีเมล กลุ่มงาน หรือ role" value="${escapeAttr(state.userQuery)}" data-filter="user-query">
+        </div>
+        ${usersTable(users)}
+      </section>
+    </div>`;
+  }
+
+  function renderUserForm() {
+    const root = document.getElementById('user-form-root');
+    if (root) root.innerHTML = userFormHTML(state.editingUser);
+  }
+
+  function userFormHTML(item) {
+    const u = item || { user_id:'', name:'', email:'', role:'staff', work_group:'', is_active:'TRUE' };
+    const isEdit = !!u.user_id;
+    return `<form data-form="user">
+      <input type="hidden" name="user_id" value="${escapeAttr(u.user_id || '')}">
+      <div class="section-title"><h3>${isEdit ? 'แก้ไขผู้ใช้' : 'เพิ่มผู้ใช้'}</h3></div>
+      <div class="field"><label>ชื่อ-สกุล *</label><input class="input" name="name" required value="${escapeAttr(u.name || '')}"></div>
+      <div class="field" style="margin-top:12px"><label>อีเมล *</label><input class="input" type="email" name="email" required value="${escapeAttr(u.email || '')}"></div>
+      <div class="form-grid" style="margin-top:12px">
+        ${selectField('Role *','role',u.role || 'staff',['viewer','staff','admin','super_admin'])}
+        ${selectField('สถานะ','is_active',String(u.is_active).toUpperCase() === 'FALSE' ? 'FALSE' : 'TRUE',['TRUE','FALSE'])}
+      </div>
+      <div class="field" style="margin-top:12px"><label>กลุ่มงาน</label><input class="input" name="work_group" value="${escapeAttr(u.work_group || '')}"></div>
+      <div class="field" style="margin-top:12px"><label>${isEdit ? 'PIN ใหม่ (เว้นว่างหากไม่เปลี่ยน)' : 'PIN เริ่มต้น *'}</label><input class="input" type="password" name="pin" ${isEdit ? '' : 'required'} minlength="4" autocomplete="new-password" placeholder="อย่างน้อย 4 ตัวอักษร"></div>
+      <div class="user-role-help">
+        <b>Role:</b> viewer = ดูข้อมูลเท่านั้น, staff = จัดการรายการงาน, admin = จัดการรายการและผู้ใช้, super_admin = สิทธิ์สูงสุด
+      </div>
+      <div class="actions" style="margin-top:14px"><button class="btn" type="submit" ${state.isSaving ? 'disabled' : ''}>${state.isSaving ? 'กำลังบันทึก...' : 'บันทึกผู้ใช้'}</button><button class="btn secondary" type="button" data-action="new-user">ล้างฟอร์ม</button></div>
+    </form>`;
+  }
+
+  function usersTable(users) {
+    if (!users.length) return `<div class="empty">ยังไม่มีบัญชีผู้ใช้ หรือไม่พบตามคำค้นหา</div>`;
+    return `<div class="table-wrap"><table class="table">
+      <thead><tr><th>ชื่อ</th><th>อีเมล</th><th>Role</th><th>กลุ่มงาน</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
+      <tbody>${users.map(u => `<tr>
+        <td><b>${escapeHTML(u.name || '-')}</b><div class="event-meta">${escapeHTML(u.user_id || '-')}</div></td>
+        <td>${escapeHTML(u.email || '-')}</td>
+        <td><span class="status draft">${escapeHTML(u.role || '-')}</span></td>
+        <td>${escapeHTML(u.work_group || '-')}</td>
+        <td>${userActiveBadge(u.is_active)}</td>
+        <td class="nowrap"><button class="btn warning" data-action="edit-user" data-id="${escapeAttr(u.user_id)}">แก้ไข</button> <button class="btn danger" data-action="delete-user" data-id="${escapeAttr(u.user_id)}">ปิดใช้งาน</button></td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+  }
+
+  function filteredUsers() {
+    const q = state.userQuery.trim().toLowerCase();
+    return state.users.filter(u => {
+      if (!q) return true;
+      return [u.user_id, u.name, u.email, u.role, u.work_group].join(' ').toLowerCase().includes(q);
+    }).sort((a,b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
+  }
+
+  function userActiveBadge(value) {
+    const active = String(value).toUpperCase() !== 'FALSE' && String(value) !== '0';
+    return `<span class="status ${active ? 'ok' : 'cancel'}">${active ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}</span>`;
+  }
+
+  function beginEditUser(id) {
+    if (!isAdmin()) return alert('ไม่มีสิทธิ์จัดการผู้ใช้');
+    const user = state.users.find(u => u.user_id === id);
+    if (!user) return;
+    state.editingUser = Object.assign({}, user);
+    state.view = 'users';
+    render();
+    setTimeout(() => window.scrollTo({ top:0, behavior:'smooth' }), 20);
+  }
+
+  async function handleUserSave(form) {
+    if (!isAdmin()) return alert('ไม่มีสิทธิ์จัดการผู้ใช้');
+    const data = formData(form);
+    state.isSaving = true;
+    renderUserForm();
+    try {
+      const action = data.user_id ? 'updateUser' : 'createUser';
+      const res = await apiPost(action, data, true);
+      if (!res.ok) throw new Error(res.message || 'บันทึกผู้ใช้ไม่สำเร็จ');
+      state.editingUser = null;
+      await loadData();
+      state.view = 'users';
+      alert('บันทึกผู้ใช้เรียบร้อย');
+    } catch (err) {
+      alert(err.message || String(err));
+    } finally {
+      state.isSaving = false;
+      render();
+    }
+  }
+
+  async function deleteUser(id) {
+    if (!isAdmin()) return alert('ไม่มีสิทธิ์จัดการผู้ใช้');
+    const user = state.users.find(u => u.user_id === id);
+    if (!user) return;
+    if (!confirm(`ยืนยันปิดใช้งานผู้ใช้: ${user.name || user.email}\nผู้ใช้นี้จะไม่สามารถเข้าสู่ระบบหลังบ้านได้`)) return;
+    try {
+      const res = await apiPost('deleteUser', { user_id:id }, true);
+      if (!res.ok) throw new Error(res.message || 'ปิดใช้งานไม่สำเร็จ');
+      state.editingUser = null;
+      await loadData();
+      state.view = 'users';
+    } catch (err) { alert(err.message || String(err)); }
   }
 
   function renderReport() {
@@ -751,6 +885,7 @@
     await sleep(180);
     if (action === 'listEvents') return { ok:true, data:demoEvents, source:'demo' };
     if (action === 'listLogs') return { ok:true, data:demoLogs, source:'demo' };
+    if (action === 'listUsers') return { ok:true, data:demoUsers, source:'demo' };
     if (action === 'listAttachments') return { ok:true, data:[], source:'demo' };
     return { ok:true, data:null, source:'demo' };
   }
@@ -758,6 +893,7 @@
   async function demoPost(action, payload) {
     await sleep(180);
     if (action === 'login') return { ok:true, data:{ user_id:'USR-DEMO', name:'ผู้ดูแลระบบตัวอย่าง', email:payload.email, role:'admin', work_group:'อำนวยการ', token:'demo-token' }, source:'demo' };
+    if (['listUsers','createUser','updateUser','deleteUser'].includes(action)) return { ok:false, message:'ยังไม่ได้ตั้งค่า Apps Script URL ใน config.js ระบบจึงยังบันทึกข้อมูลผู้ใช้จริงไม่ได้', source:'demo' };
     return { ok:false, message:'ยังไม่ได้ตั้งค่า Apps Script URL ใน config.js ระบบจึงยังบันทึกข้อมูลจริงไม่ได้', source:'demo' };
   }
 
@@ -790,6 +926,9 @@
     state.session = null;
     state.events = [];
     state.logs = [];
+    state.users = [];
+    state.editingEvent = null;
+    state.editingUser = null;
     state.view = IS_ADMIN_APP ? 'login' : 'dashboard';
     render();
   }

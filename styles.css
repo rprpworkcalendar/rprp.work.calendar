@@ -43,3 +43,15 @@
 .public-calendar-layout{display:grid;grid-template-columns:minmax(0,60fr) minmax(340px,40fr);gap:18px;align-items:start}.calendar-card,.month-list-card{min-width:0}.month-list{display:grid;gap:10px;max-height:calc(100vh - 330px);min-height:420px;overflow:auto;padding-right:2px}.month-list-item{width:100%;display:grid;grid-template-columns:58px minmax(0,1fr) auto;gap:12px;align-items:center;border:1px solid var(--border);background:var(--bg-soft);border-radius:18px;padding:12px;text-align:left;color:var(--text)}.month-list-item:hover{border-color:var(--green-2);box-shadow:0 12px 30px rgba(36,53,47,.08);background:#fff}.month-list-date{width:54px;height:54px;border-radius:16px;background:white;border:1px solid var(--border);display:grid;place-items:center;align-content:center;color:#1B7A42}.month-list-date b{font-size:20px;line-height:1}.month-list-date span{font-size:11px;font-weight:900;color:var(--muted)}.month-list-title{font-weight:1000;line-height:1.35;margin-bottom:4px}.month-list-body{min-width:0}.site-footer{margin-top:auto;border-top:1px solid var(--border);background:rgba(255,255,255,.86)}.site-footer-inner{max-width:1440px;margin:0 auto;padding:18px 24px;display:flex;justify-content:space-between;gap:14px;color:var(--muted);font-size:13px}.site-footer b{color:var(--text)}.footer-meta{text-align:right;white-space:nowrap}
 @media(max-width:1100px){.site-header-inner{align-items:flex-start;flex-direction:column}.brand-public{min-width:0}.public-nav{justify-content:flex-start;flex-wrap:wrap}.public-header-actions{justify-content:flex-start}.public-calendar-layout{grid-template-columns:1fr}.month-list{max-height:none;min-height:auto}.public-hero{align-items:flex-start;flex-direction:column}.public-hero-summary{justify-content:flex-start}}
 @media(max-width:720px){.site-header-inner,.public-main,.site-footer-inner{padding-left:14px;padding-right:14px}.public-hero h2{font-size:24px}.public-calendar-layout{gap:14px}.month-list-item{grid-template-columns:48px minmax(0,1fr);align-items:start}.month-list-item>div:last-child{grid-column:2}.month-list-date{width:46px;height:46px}.site-footer-inner{flex-direction:column}.footer-meta{text-align:left}.public-nav button{padding:9px 10px;font-size:13px}.public-header-actions .badge{display:none}}
+
+/* User management */
+.user-role-help{
+  margin-top:12px;
+  border:1px solid var(--border);
+  background:#FAFFF8;
+  border-radius:14px;
+  padding:12px 14px;
+  color:var(--muted);
+  font-size:13px;
+  line-height:1.55;
+}
