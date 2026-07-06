@@ -616,58 +616,65 @@
 
   function renderReport() {
     const events = filteredEvents();
-    const today = todayISO();
-    const thisMonthKey = toISO(new Date(state.monthDate.getFullYear(), state.monthDate.getMonth(), 1)).slice(0, 7);
-    const thisMonthEvents = events.filter(e => normalizeDateOnly(e.start_date).slice(0, 7) === thisMonthKey);
-    const upcoming = events.filter(e => e.status !== 'ยกเลิก' && normalizeDateOnly(e.start_date) >= today).sort(sortEvents);
-    const byStatus = countBy(events, 'status');
     const byGroup = countBy(events, 'work_group');
     const byMonth = countBy(events, e => normalizeDateOnly(e.start_date).slice(0, 7));
-    const confirmed = byStatus['ยืนยัน'] || 0;
-    const draft = byStatus['ร่าง'] || 0;
-    const cancelled = byStatus['ยกเลิก'] || 0;
-    const done = byStatus['เสร็จสิ้น'] || 0;
-    return `<div class="report-dashboard">
-      <div class="grid cards report-metrics">
-        ${metric('รายการทั้งหมด', events.length)}
-        ${metric('งานเดือนนี้', thisMonthEvents.length)}
-        ${metric('งานใกล้ถึง', upcoming.length)}
-        ${metric('ยืนยันแล้ว', confirmed)}
-      </div>
-      <div class="report-status-strip">
-        <div><b>${draft}</b><span>ร่าง</span></div>
-        <div><b>${done}</b><span>เสร็จสิ้น</span></div>
-        <div><b>${cancelled}</b><span>ยกเลิก</span></div>
-        <div><b>${Object.keys(byGroup).length}</b><span>กลุ่มงาน</span></div>
-      </div>
-      <div class="grid report-summary-grid">
-        ${summaryCard('สรุปตามสถานะ', byStatus)}
-        ${summaryCard('สรุปตามกลุ่มงาน', byGroup)}
-        ${summaryCard('สรุปตามเดือน', byMonth)}
-      </div>
-      <div class="grid report-lists-grid">
-        ${reportEventList('งานใกล้ถึง', upcoming.slice(0, 8), 'ยังไม่มีงานใกล้ถึง')}
-        ${reportEventList('รายการของเดือนที่เลือก', thisMonthEvents.sort(sortEvents).slice(0, 10), 'ยังไม่มีรายการในเดือนนี้')}
-      </div>
+    const byStatus = countBy(events, 'status');
+    return `<div class="public-report-dashboard public-report-only-charts">
+      <section class="card report-chart-card report-chart-wide">
+        <div class="section-title report-chart-title"><div><h3>สรุปจำนวนงานตามกลุ่มงาน</h3><p class="muted small">เปรียบเทียบภาระงานของแต่ละกลุ่มงานจากรายการทั้งหมด</p></div></div>
+        ${horizontalChart(byGroup, { empty:'ยังไม่มีข้อมูลกลุ่มงาน' })}
+      </section>
+      <section class="card report-chart-card">
+        <div class="section-title report-chart-title"><div><h3>สรุปจำนวนงานตามเดือน</h3><p class="muted small">จำนวนรายการงานแยกตามเดือน</p></div></div>
+        ${columnChart(byMonth, { empty:'ยังไม่มีข้อมูลรายเดือน' })}
+      </section>
+      <section class="card report-chart-card">
+        <div class="section-title report-chart-title"><div><h3>สรุปจำนวนงานตามสถานะ</h3><p class="muted small">ติดตามสัดส่วนงานตามสถานะปัจจุบัน</p></div></div>
+        ${statusChart(byStatus, { empty:'ยังไม่มีข้อมูลสถานะ' })}
+      </section>
     </div>`;
   }
 
-  function reportEventList(title, events, emptyText) {
-    return `<section class="card report-list-card">
-      <div class="section-title"><h3>${escapeHTML(title)}</h3><span class="small muted">${events.length} รายการ</span></div>
-      <div class="event-list">${events.length ? events.map(e => `<button class="event-item report-event-item" data-action="open-event" data-id="${escapeAttr(e.id)}">
-        <div class="report-event-date">${formatDate(e.start_date)}</div>
-        <h4>${escapeHTML(e.title)}</h4>
-        <div class="event-meta">${formatTimeRange(e.start_time, e.end_time)} · ${escapeHTML(e.location || '-')}</div>
-        <div class="event-meta">${escapeHTML(e.work_group || '-')} · ${statusText(e.status)}</div>
-      </button>`).join('') : `<div class="empty">${escapeHTML(emptyText)}</div>`}</div>
-    </section>`;
+  function horizontalChart(data, options) {
+    const entries = Object.entries(data).filter(([k]) => k && k !== '-').sort((a,b) => b[1] - a[1]);
+    if (!entries.length) return `<div class="empty">${escapeHTML(options && options.empty || 'ไม่มีข้อมูล')}</div>`;
+    const max = Math.max(1, ...entries.map(([,v]) => Number(v) || 0));
+    return `<div class="dashboard-bar-chart">${entries.map(([label,value]) => {
+      const width = Math.max(7, (Number(value) || 0) / max * 100);
+      return `<div class="dashboard-bar-row"><div class="dashboard-bar-label">${escapeHTML(label)}</div><div class="dashboard-bar-track"><i style="width:${width}%"></i></div><strong>${value}</strong></div>`;
+    }).join('')}</div>`;
   }
 
-  function summaryCard(title, data) {
-    const entries = Object.entries(data).sort((a,b) => b[1] - a[1]);
-    const max = Math.max(1, ...entries.map(e => e[1]));
-    return `<section class="card"><h3 style="margin-top:0">${escapeHTML(title)}</h3><div class="summary-bars">${entries.map(([k,v]) => `<div class="bar-row"><span>${escapeHTML(k || '-')}</span><div class="bar"><i style="width:${Math.max(8, v/max*100)}%"></i></div><b>${v}</b></div>`).join('') || '<div class="empty">ไม่มีข้อมูล</div>'}</div></section>`;
+  function columnChart(data, options) {
+    const entries = Object.entries(data).filter(([k]) => k && k !== '-').sort((a,b) => a[0].localeCompare(b[0]));
+    if (!entries.length) return `<div class="empty">${escapeHTML(options && options.empty || 'ไม่มีข้อมูล')}</div>`;
+    const max = Math.max(1, ...entries.map(([,v]) => Number(v) || 0));
+    return `<div class="dashboard-column-chart">${entries.map(([month,value]) => {
+      const height = Math.max(10, (Number(value) || 0) / max * 100);
+      return `<div class="dashboard-column"><div class="dashboard-column-value">${value}</div><div class="dashboard-column-bar"><i style="height:${height}%"></i></div><div class="dashboard-column-label">${escapeHTML(formatMonthKey(month))}</div></div>`;
+    }).join('')}</div>`;
+  }
+
+  function statusChart(data, options) {
+    const order = ['ยืนยัน','ร่าง','เสร็จสิ้น','ยกเลิก'];
+    const entries = Object.entries(data).filter(([k]) => k && k !== '-').sort((a,b) => {
+      const ia = order.indexOf(a[0]);
+      const ib = order.indexOf(b[0]);
+      if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+      return b[1] - a[1];
+    });
+    if (!entries.length) return `<div class="empty">${escapeHTML(options && options.empty || 'ไม่มีข้อมูล')}</div>`;
+    const total = entries.reduce((sum, [,v]) => sum + (Number(v) || 0), 0) || 1;
+    return `<div class="dashboard-status-chart">${entries.map(([label,value]) => {
+      const pct = Math.round((Number(value) || 0) / total * 100);
+      return `<div class="dashboard-status-row"><div class="dashboard-status-head"><span>${statusBadge(label)}</span><strong>${value} งาน</strong></div><div class="dashboard-status-track"><i style="width:${Math.max(5, pct)}%"></i></div><div class="dashboard-status-percent">${pct}%</div></div>`;
+    }).join('')}</div>`;
+  }
+
+  function formatMonthKey(key) {
+    const parts = String(key || '').split('-').map(Number);
+    if (!parts[0] || !parts[1]) return key || '-';
+    return `${thaiMonthShort(parts[1] - 1)} ${parts[0] + 543}`;
   }
 
   function logsTable() {
@@ -736,9 +743,9 @@
         ${detailBox('กลุ่มงาน', e.work_group || '-')}
       </div>
       <div class="detail-box" style="margin-top:12px"><b>รายละเอียด</b>${escapeHTML(e.description || '-')}</div>
-      ${IS_ADMIN_APP ? `<div class="card" style="box-shadow:none;margin-top:14px">
-        <div class="section-title"><h3>ไฟล์แนบ Google Drive</h3>${canEdit() ? `<label class="btn ${state.isUploading ? 'secondary' : ''}">${state.isUploading ? 'กำลังอัปโหลด...' : 'แนบไฟล์'}<input class="hidden" type="file" data-upload ${state.isUploading ? 'disabled' : ''}></label>` : ''}</div>
-        <p class="muted small">จำกัดไฟล์ละไม่เกิน ${MAX_UPLOAD_MB} MB</p>
+      ${(IS_ADMIN_APP || state.attachments.length) ? `<div class="card attachment-card" style="box-shadow:none;margin-top:14px">
+        <div class="section-title"><h3>${IS_ADMIN_APP ? 'ไฟล์แนบ Google Drive' : 'ไฟล์แนบ'}</h3>${IS_ADMIN_APP && canEdit() ? `<label class="btn ${state.isUploading ? 'secondary' : ''}">${state.isUploading ? 'กำลังอัปโหลด...' : 'แนบไฟล์'}<input class="hidden" type="file" data-upload ${state.isUploading ? 'disabled' : ''}></label>` : ''}</div>
+        ${IS_ADMIN_APP ? `<p class="muted small">จำกัดไฟล์ละไม่เกิน ${MAX_UPLOAD_MB} MB</p>` : ''}
         ${attachmentsHTML()}
       </div>` : ''}
       <div class="actions" style="justify-content:flex-end;margin-top:14px">
