@@ -1,3 +1,4 @@
+// Hotfix 2026-07-06: remove custom GET headers to avoid Apps Script CORS preflight.
 (function () {
   'use strict';
 
@@ -931,11 +932,7 @@
     url.searchParams.set('action', action);
     url.searchParams.set('_ts', String(Date.now()));
     Object.entries(params || {}).forEach(([key, value]) => url.searchParams.set(key, value));
-    const res = await fetch(url.toString(), {
-      method:'GET',
-      cache:'no-store',
-      headers:{ 'Cache-Control':'no-cache' }
-    });
+    const res = await fetch(url.toString(), { method:'GET' });
     return parseJsonResponse(res);
   }
 
