@@ -45,3 +45,4 @@ calendar.html = ปฏิทินรายเดือน
 admin.html    = จัดการรายการงาน
 report.html   = รายงานสรุป
 ```
+Redeploy public view
