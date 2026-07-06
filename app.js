@@ -267,11 +267,8 @@
     const topbar = document.getElementById('topbar');
     if (!topbar) return;
     if (!IS_ADMIN_APP) {
-      topbar.innerHTML = `<div class="public-hero public-hero-clean">
-        <div>
-          <h2>${titleMap[state.view] || 'ปฏิทินภาพรวมงาน'}</h2>
-        </div>
-      </div>`;
+      // Public View ไม่แสดงกล่องหัวข้อซ้ำ เพราะมี Header หลักอยู่แล้ว
+      topbar.innerHTML = '';
       return;
     }
     topbar.innerHTML = `
