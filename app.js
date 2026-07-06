@@ -928,12 +928,54 @@
 
   async function apiGet(action, params) {
     if (!isApiConfigured()) return demoApi(action, params || {});
+    const url = buildApiUrl(action, params);
+    try {
+      const res = await fetch(url.toString(), { method:'GET', cache:'no-store' });
+      return await parseJsonResponse(res);
+    } catch (err) {
+      // Apps Script Web App may intermittently fail browser CORS on GitHub Pages.
+      // Fallback to JSONP for public GET endpoints. Requires updated Code.gs.
+      return apiGetJsonp(action, params || {});
+    }
+  }
+
+  function buildApiUrl(action, params) {
     const url = new URL(API_URL);
     url.searchParams.set('action', action);
     url.searchParams.set('_ts', String(Date.now()));
-    Object.entries(params || {}).forEach(([key, value]) => url.searchParams.set(key, value));
-    const res = await fetch(url.toString(), { method:'GET' });
-    return parseJsonResponse(res);
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) url.searchParams.set(key, value);
+    });
+    return url;
+  }
+
+  function apiGetJsonp(action, params) {
+    return new Promise((resolve, reject) => {
+      const callbackName = `rpCalendarJsonp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      const url = buildApiUrl(action, params || {});
+      url.searchParams.set('callback', callbackName);
+      const script = document.createElement('script');
+      let done = false;
+      const timer = setTimeout(() => cleanup(new Error('โหลดข้อมูลจาก Apps Script ไม่สำเร็จ กรุณาตรวจสอบ Deployment หรือสิทธิ์การเข้าถึง')), 15000);
+
+      function cleanup(error, data) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        try { delete window[callbackName]; } catch (_) { window[callbackName] = undefined; }
+        if (script.parentNode) script.parentNode.removeChild(script);
+        if (error) reject(error);
+        else resolve(data);
+      }
+
+      window[callbackName] = (data) => cleanup(null, data);
+      script.onerror = () => cleanup(new Error('เชื่อมต่อ API ไม่สำเร็จ: JSONP fallback failed'));
+      script.src = url.toString();
+      document.head.appendChild(script);
+    }).then((json) => {
+      if (!json || json.ok === false) throw new Error((json && json.message) || 'API error');
+      return json;
+    });
   }
 
   async function apiPost(action, payload, requireAuth) {
