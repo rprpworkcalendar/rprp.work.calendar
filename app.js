@@ -26,6 +26,10 @@
     monthDate: new Date(),
     selectedEvent: null,
     attachments: [],
+    attachmentCache: {},
+    attachmentLoading: false,
+    attachmentError: '',
+    attachmentRequestId: 0,
     editingEvent: null,
     editingUser: null,
     userQuery: '',
@@ -743,7 +747,7 @@
         ${detailBox('กลุ่มงาน', e.work_group || '-')}
       </div>
       <div class="detail-box" style="margin-top:12px"><b>รายละเอียด</b>${escapeHTML(e.description || '-')}</div>
-      ${(IS_ADMIN_APP || state.attachments.length) ? `<div class="card attachment-card" style="box-shadow:none;margin-top:14px">
+      ${(IS_ADMIN_APP || state.attachmentLoading || state.attachmentError || state.attachments.length) ? `<div class="card attachment-card" style="box-shadow:none;margin-top:14px">
         <div class="section-title"><h3>${IS_ADMIN_APP ? 'ไฟล์แนบ Google Drive' : 'ไฟล์แนบ'}</h3>${IS_ADMIN_APP && canEdit() ? `<label class="btn ${state.isUploading ? 'secondary' : ''}">${state.isUploading ? 'กำลังอัปโหลด...' : 'แนบไฟล์'}<input class="hidden" type="file" data-upload ${state.isUploading ? 'disabled' : ''}></label>` : ''}</div>
         ${IS_ADMIN_APP ? `<p class="muted small">จำกัดไฟล์ละไม่เกิน ${MAX_UPLOAD_MB} MB</p>` : ''}
         ${attachmentsHTML()}
@@ -758,8 +762,14 @@
   function detailBox(label, value) { return `<div class="detail-box"><b>${escapeHTML(label)}</b>${escapeHTML(value)}</div>`; }
 
   function attachmentsHTML() {
+    if (state.attachmentLoading && !state.attachments.length) {
+      return `<div class="empty">กำลังโหลดไฟล์แนบ...</div>`;
+    }
+    if (state.attachmentError && !state.attachments.length) {
+      return `<div class="empty">ยังโหลดไฟล์แนบไม่ได้ กรุณากดรีเฟรชหรือเปิดรายละเอียดอีกครั้ง<br><span class="small muted">${escapeHTML(state.attachmentError)}</span></div>`;
+    }
     if (!state.attachments.length) return `<div class="empty">ยังไม่มีไฟล์แนบ</div>`;
-    return `<div>${state.attachments.map(a => `<div class="attachment-row"><div><b>${escapeHTML(a.file_name || '-')}</b><div class="event-meta">${escapeHTML(a.mime_type || '-')} · ${formatBytes(a.size_bytes)} · ${formatDateTime(a.created_at)}</div></div><div class="actions">${a.file_url ? `<a class="btn secondary" target="_blank" rel="noreferrer" href="${escapeAttr(a.file_url)}">เปิด</a>` : ''}${canEdit() ? `<button class="btn danger" data-action="delete-attachment" data-id="${escapeAttr(a.id)}">ลบ</button>` : ''}</div></div>`).join('')}</div>`;
+    return `<div>${state.attachments.map(a => `<div class="attachment-row"><div><b>${escapeHTML(a.file_name || '-')}</b><div class="event-meta">${escapeHTML(a.mime_type || '-')} · ${formatBytes(a.size_bytes)} · ${formatDateTime(a.created_at)}</div></div><div class="actions">${a.file_url ? `<a class="btn secondary" target="_blank" rel="noreferrer" href="${escapeAttr(a.file_url)}">เปิด</a>` : ''}${canEdit() ? `<button class="btn danger" data-action="delete-attachment" data-id="${escapeAttr(a.id)}">ลบ</button>` : ''}</div></div>`).join('')}${state.attachmentLoading ? `<div class="small muted" style="margin-top:8px">กำลังตรวจสอบไฟล์แนบล่าสุด...</div>` : ''}${state.attachmentError ? `<div class="small muted" style="margin-top:8px">ใช้ข้อมูลไฟล์แนบล่าสุดที่โหลดได้ เนื่องจากโหลดครั้งล่าสุดไม่สำเร็จ</div>` : ''}</div>`;
   }
 
   async function handleLogin(form) {
@@ -824,18 +834,53 @@
     const item = state.events.find(e => e.id === id);
     if (!item) return;
     state.selectedEvent = item;
-    state.attachments = [];
+    state.attachments = state.attachmentCache[id] ? state.attachmentCache[id].slice() : [];
+    state.attachmentError = '';
+    state.attachmentLoading = true;
+    const requestId = ++state.attachmentRequestId;
     renderModal();
+
     try {
-      const res = await apiGet('listAttachments', { event_id:id });
-      state.attachments = Array.isArray(res.data) ? res.data : [];
+      const attachments = await loadAttachmentsWithRetry(id, 2);
+      if (!state.selectedEvent || state.selectedEvent.id !== id || requestId !== state.attachmentRequestId) return;
+      state.attachments = attachments;
+      state.attachmentCache[id] = attachments.slice();
+      state.attachmentError = '';
     } catch (err) {
-      state.attachments = [];
+      if (!state.selectedEvent || state.selectedEvent.id !== id || requestId !== state.attachmentRequestId) return;
+      state.attachmentError = err.message || String(err);
+      // อย่าล้างไฟล์แนบที่เคยโหลดได้แล้ว เพื่อไม่ให้ไฟล์หายจากหน้าจอแบบไม่เสถียร
+      state.attachments = state.attachmentCache[id] ? state.attachmentCache[id].slice() : [];
+    } finally {
+      if (state.selectedEvent && state.selectedEvent.id === id && requestId === state.attachmentRequestId) {
+        state.attachmentLoading = false;
+        renderModal();
+      }
     }
-    renderModal();
   }
 
-  function closeModal() { state.selectedEvent = null; state.attachments = []; renderModal(); }
+  async function loadAttachmentsWithRetry(eventId, retries) {
+    let lastError;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await apiGet('listAttachments', { event_id:eventId, _cache_bust:`${Date.now()}_${attempt}` });
+        return Array.isArray(res.data) ? res.data : [];
+      } catch (err) {
+        lastError = err;
+        if (attempt < retries) await sleep(350 + attempt * 450);
+      }
+    }
+    throw lastError || new Error('โหลดไฟล์แนบไม่สำเร็จ');
+  }
+
+  function closeModal() {
+    state.selectedEvent = null;
+    state.attachments = [];
+    state.attachmentLoading = false;
+    state.attachmentError = '';
+    state.attachmentRequestId++;
+    renderModal();
+  }
 
   function beginEditEvent(id) {
     const item = state.events.find(e => e.id === id);
@@ -863,6 +908,7 @@
         base64
       }, true);
       if (!res.ok) throw new Error(res.message || 'อัปโหลดไม่สำเร็จ');
+      delete state.attachmentCache[state.selectedEvent.id];
       await openEvent(state.selectedEvent.id);
     } catch (err) {
       alert(err.message || String(err));
@@ -886,8 +932,13 @@
     if (!isApiConfigured()) return demoApi(action, params || {});
     const url = new URL(API_URL);
     url.searchParams.set('action', action);
+    url.searchParams.set('_ts', String(Date.now()));
     Object.entries(params || {}).forEach(([key, value]) => url.searchParams.set(key, value));
-    const res = await fetch(url.toString(), { method:'GET' });
+    const res = await fetch(url.toString(), {
+      method:'GET',
+      cache:'no-store',
+      headers:{ 'Cache-Control':'no-cache' }
+    });
     return parseJsonResponse(res);
   }
 
