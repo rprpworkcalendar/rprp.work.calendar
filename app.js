@@ -210,7 +210,7 @@
     return `<header class="site-header">
       <div class="site-header-inner">
         <button class="brand brand-public" data-action="view" data-view="calendar" aria-label="กลับหน้าปฏิทิน">
-          <div class="brand-mark" aria-hidden="true"></div>
+          <img class="brand-logo-public" src="./royal-park-logo.png" alt="โลโก้อุทยานหลวงราชพฤกษ์">
           <div>
             <h1>${escapeHTML(APP_NAME)}</h1>
           </div>
@@ -229,11 +229,7 @@
   function renderPublicFooter() {
     const year = new Date().getFullYear() + 543;
     return `<footer class="site-footer">
-      <div class="site-footer-inner">
-        <div>
-          <b>${escapeHTML(APP_NAME)}</b><br>
-          <span>ระบบแสดงปฏิทินภาพรวมงานสาธารณะ เชื่อมข้อมูลจาก Google Sheet และ Google Drive ผ่าน Apps Script</span>
-        </div>
+      <div class="site-footer-inner site-footer-minimal">
         <div class="footer-meta">© ${year} ${escapeHTML(ORG_NAME)}</div>
       </div>
     </footer>`;
@@ -357,7 +353,7 @@
       <thead><tr><th>วันที่</th><th>รายการ</th><th>สถานที่</th><th>กลุ่มงาน</th><th>สถานะ</th><th></th></tr></thead>
       <tbody>${events.map(e => `<tr>
         <td class="nowrap">${formatDate(e.start_date)}</td>
-        <td><b>${escapeHTML(e.title)}</b><div class="event-meta">${escapeHTML(e.start_time || '-')} - ${escapeHTML(e.end_time || '-')} · ${escapeHTML(e.coordinator || '-')}</div></td>
+        <td><b>${escapeHTML(e.title)}</b><div class="event-meta">${formatTimeRange(e.start_time, e.end_time)} · ${escapeHTML(e.coordinator || '-')}</div></td>
         <td>${escapeHTML(e.location || '-')}</td>
         <td>${escapeHTML(e.work_group || '-')}</td>
         <td>${statusBadge(e.status)}</td>
@@ -386,7 +382,7 @@
     const monthly = monthEvents();
     const calendarCard = `<section class="card calendar-card">
       <div class="calendar-head">
-        <div><h3 style="margin:0">${monthName(month)} ${year + 543}</h3><p class="muted small">คลิกที่รายการในปฏิทินเพื่อดูรายละเอียดและไฟล์แนบ</p></div>
+        <div><h3 style="margin:0">${monthName(month)} ${year + 543}</h3><p class="muted small">คลิกที่รายการในปฏิทินเพื่อดูรายละเอียดงาน</p></div>
         <div class="actions"><button class="btn secondary" data-action="prev-month">ก่อนหน้า</button><button class="btn secondary" data-action="today-month">เดือนนี้</button><button class="btn secondary" data-action="next-month">ถัดไป</button></div>
       </div>
       <div class="calendar-grid">${names.map(n => `<div class="day-name">${n}</div>`).join('')}${days.map(dayCell).join('')}</div>
@@ -422,7 +418,7 @@
       </div>
       <div class="month-list-body">
         <div class="month-list-title">${escapeHTML(e.title)}</div>
-        <div class="event-meta">${escapeHTML(e.start_time || '-')} - ${escapeHTML(e.end_time || '-')} · ${escapeHTML(e.location || '-')}</div>
+        <div class="event-meta">${formatTimeRange(e.start_time, e.end_time)} · ${escapeHTML(e.location || '-')}</div>
         <div class="event-meta">${escapeHTML(e.work_group || '-')}</div>
       </div>
       <div>${statusBadge(e.status)}</div>
@@ -619,22 +615,53 @@
   }
 
   function renderReport() {
-    const events = state.events;
+    const events = filteredEvents();
+    const today = todayISO();
+    const thisMonthKey = toISO(new Date(state.monthDate.getFullYear(), state.monthDate.getMonth(), 1)).slice(0, 7);
+    const thisMonthEvents = events.filter(e => normalizeDateOnly(e.start_date).slice(0, 7) === thisMonthKey);
+    const upcoming = events.filter(e => e.status !== 'ยกเลิก' && normalizeDateOnly(e.start_date) >= today).sort(sortEvents);
     const byStatus = countBy(events, 'status');
     const byGroup = countBy(events, 'work_group');
-    const byMonth = countBy(events, e => (e.start_date || '').slice(0, 7));
-    return `<div class="grid cards">
-      ${metric('รายการทั้งหมด', events.length)}
-      ${metric('กลุ่มงาน', Object.keys(byGroup).length)}
-      ${metric('ยืนยัน', byStatus['ยืนยัน'] || 0)}
-      ${metric('ร่าง', byStatus['ร่าง'] || 0)}
-    </div>
-    <div class="grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:14px">
-      ${summaryCard('สรุปตามสถานะ', byStatus)}
-      ${summaryCard('สรุปตามกลุ่มงาน', byGroup)}
-      ${summaryCard('สรุปตามเดือน', byMonth)}
-    </div>
-    <section class="card" style="margin-top:14px"><div class="section-title"><h3>Activity Logs ล่าสุด</h3></div>${logsTable()}</section>`;
+    const byMonth = countBy(events, e => normalizeDateOnly(e.start_date).slice(0, 7));
+    const confirmed = byStatus['ยืนยัน'] || 0;
+    const draft = byStatus['ร่าง'] || 0;
+    const cancelled = byStatus['ยกเลิก'] || 0;
+    const done = byStatus['เสร็จสิ้น'] || 0;
+    return `<div class="report-dashboard">
+      <div class="grid cards report-metrics">
+        ${metric('รายการทั้งหมด', events.length)}
+        ${metric('งานเดือนนี้', thisMonthEvents.length)}
+        ${metric('งานใกล้ถึง', upcoming.length)}
+        ${metric('ยืนยันแล้ว', confirmed)}
+      </div>
+      <div class="report-status-strip">
+        <div><b>${draft}</b><span>ร่าง</span></div>
+        <div><b>${done}</b><span>เสร็จสิ้น</span></div>
+        <div><b>${cancelled}</b><span>ยกเลิก</span></div>
+        <div><b>${Object.keys(byGroup).length}</b><span>กลุ่มงาน</span></div>
+      </div>
+      <div class="grid report-summary-grid">
+        ${summaryCard('สรุปตามสถานะ', byStatus)}
+        ${summaryCard('สรุปตามกลุ่มงาน', byGroup)}
+        ${summaryCard('สรุปตามเดือน', byMonth)}
+      </div>
+      <div class="grid report-lists-grid">
+        ${reportEventList('งานใกล้ถึง', upcoming.slice(0, 8), 'ยังไม่มีงานใกล้ถึง')}
+        ${reportEventList('รายการของเดือนที่เลือก', thisMonthEvents.sort(sortEvents).slice(0, 10), 'ยังไม่มีรายการในเดือนนี้')}
+      </div>
+    </div>`;
+  }
+
+  function reportEventList(title, events, emptyText) {
+    return `<section class="card report-list-card">
+      <div class="section-title"><h3>${escapeHTML(title)}</h3><span class="small muted">${events.length} รายการ</span></div>
+      <div class="event-list">${events.length ? events.map(e => `<button class="event-item report-event-item" data-action="open-event" data-id="${escapeAttr(e.id)}">
+        <div class="report-event-date">${formatDate(e.start_date)}</div>
+        <h4>${escapeHTML(e.title)}</h4>
+        <div class="event-meta">${formatTimeRange(e.start_time, e.end_time)} · ${escapeHTML(e.location || '-')}</div>
+        <div class="event-meta">${escapeHTML(e.work_group || '-')} · ${statusText(e.status)}</div>
+      </button>`).join('') : `<div class="empty">${escapeHTML(emptyText)}</div>`}</div>
+    </section>`;
   }
 
   function summaryCard(title, data) {
@@ -702,20 +729,20 @@
       <div class="modal-head"><div><span>${statusBadge(e.status)}</span><h2 style="margin:10px 0 0">${escapeHTML(e.title)}</h2><p class="muted small">รหัส: ${escapeHTML(e.id)}</p></div><button class="close" data-action="close-modal">×</button></div>
       <div class="detail-grid">
         ${detailBox('วันที่', `${formatDate(e.start_date)}${e.end_date && e.end_date !== e.start_date ? ' - ' + formatDate(e.end_date) : ''}`)}
-        ${detailBox('เวลา', `${escapeHTML(e.start_time || '-')} - ${escapeHTML(e.end_time || '-')}`)}
+        ${detailBox('เวลา', `${formatTimeRange(e.start_time, e.end_time)}`)}
         ${detailBox('สถานที่', e.location || '-')}
         ${detailBox('รูปแบบ', e.format_type || '-')}
         ${detailBox('ผู้ประสานงาน', e.coordinator || '-')}
         ${detailBox('กลุ่มงาน', e.work_group || '-')}
       </div>
       <div class="detail-box" style="margin-top:12px"><b>รายละเอียด</b>${escapeHTML(e.description || '-')}</div>
-      <div class="card" style="box-shadow:none;margin-top:14px">
+      ${IS_ADMIN_APP ? `<div class="card" style="box-shadow:none;margin-top:14px">
         <div class="section-title"><h3>ไฟล์แนบ Google Drive</h3>${canEdit() ? `<label class="btn ${state.isUploading ? 'secondary' : ''}">${state.isUploading ? 'กำลังอัปโหลด...' : 'แนบไฟล์'}<input class="hidden" type="file" data-upload ${state.isUploading ? 'disabled' : ''}></label>` : ''}</div>
         <p class="muted small">จำกัดไฟล์ละไม่เกิน ${MAX_UPLOAD_MB} MB</p>
         ${attachmentsHTML()}
-      </div>
+      </div>` : ''}
       <div class="actions" style="justify-content:flex-end;margin-top:14px">
-        ${canEdit() ? `<button class="btn warning" data-action="edit-event" data-id="${escapeAttr(e.id)}">แก้ไข</button><button class="btn danger" data-action="delete-event" data-id="${escapeAttr(e.id)}">ลบ/ยกเลิก</button>` : ''}
+        ${IS_ADMIN_APP && canEdit() ? `<button class="btn warning" data-action="edit-event" data-id="${escapeAttr(e.id)}">แก้ไข</button><button class="btn danger" data-action="delete-event" data-id="${escapeAttr(e.id)}">ลบ/ยกเลิก</button>` : ''}
         <button class="btn secondary" data-action="close-modal">ปิด</button>
       </div>
     </div></div>`;
@@ -973,6 +1000,25 @@
   }
   function formatDate(iso) { if (!iso) return '-'; const [y,m,d] = String(iso).slice(0,10).split('-').map(Number); if (!y || !m || !d) return iso; return new Date(y,m-1,d).toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' }); }
   function formatDateTime(value) { if (!value) return '-'; const d = new Date(value); if (Number.isNaN(d.getTime())) return value; return d.toLocaleString('th-TH', { timeZone:TIMEZONE, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }); }
+  function formatTime(value) {
+    if (!value) return '-';
+    const text = String(value).trim();
+    const isoTime = text.match(/T(\d{2}:\d{2})/);
+    if (isoTime) return isoTime[1];
+    const plain = text.match(/^(\d{1,2}):(\d{2})/);
+    if (plain) return `${plain[1].padStart(2, '0')}:${plain[2]}`;
+    return text;
+  }
+  function formatTimeRange(start, end) {
+    const a = formatTime(start);
+    const b = formatTime(end);
+    if (a === '-' && b === '-') return '-';
+    return `${a} - ${b}`;
+  }
+  function sortEvents(a, b) {
+    return normalizeDateOnly(a.start_date).localeCompare(normalizeDateOnly(b.start_date)) || formatTime(a.start_time).localeCompare(formatTime(b.start_time));
+  }
+  function statusText(value) { return String(value || '-'); }
   function formatBytes(bytes) { const n = Number(bytes || 0); if (!n) return '-'; if (n < 1024) return n + ' B'; if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB'; return (n/1024/1024).toFixed(2) + ' MB'; }
   function escapeHTML(value) { return String(value == null ? '' : value).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
   function escapeAttr(value) { return escapeHTML(value).replace(/'/g, '&#39;'); }

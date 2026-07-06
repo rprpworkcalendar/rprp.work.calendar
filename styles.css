@@ -64,3 +64,27 @@
 .public-hero-clean h2{margin:0;font-size:32px}
 .public-hero-clean .eyebrow,.public-hero-clean p,.public-hero-clean .public-hero-summary{display:none!important}
 @media(max-width:720px){.public-hero-clean h2{font-size:24px}}
+
+
+/* Public view refinement 2026-07-06: official logo, cleaner footer, public-only modal, dashboard report */
+.brand-logo-public{
+  width:58px;
+  height:70px;
+  object-fit:contain;
+  display:block;
+  flex:0 0 auto;
+}
+.brand-public .brand-mark{display:none!important}
+.brand-public h1{font-size:19px;line-height:1.25}
+.site-footer-minimal{justify-content:center;text-align:center;padding-top:14px;padding-bottom:14px}
+.site-footer-minimal .footer-meta{text-align:center;white-space:normal}
+.report-dashboard{display:grid;gap:14px}
+.report-metrics{margin-bottom:0}
+.report-status-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.report-status-strip>div{background:#fff;border:1px solid var(--border);border-radius:20px;padding:16px;box-shadow:var(--shadow);display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.report-status-strip b{font-size:28px;color:#1f3f35}.report-status-strip span{color:var(--muted);font-weight:900;font-size:13px}
+.report-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:0}
+.report-lists-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.report-list-card .section-title{margin-top:0}.report-event-item{background:#fff}.report-event-date{display:inline-flex;background:var(--green-1);color:#1B7A42;border-radius:999px;padding:5px 9px;font-size:12px;font-weight:900;margin-bottom:6px}
+@media(max-width:920px){.brand-logo-public{width:50px;height:62px}.report-summary-grid,.report-lists-grid{grid-template-columns:1fr}.report-status-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.brand-logo-public{width:44px;height:56px}.report-status-strip{grid-template-columns:1fr}.brand-public h1{font-size:16px}}
