@@ -210,17 +210,15 @@
     return `<header class="site-header">
       <div class="site-header-inner">
         <button class="brand brand-public" data-action="view" data-view="calendar" aria-label="กลับหน้าปฏิทิน">
-          <div class="brand-mark">RP</div>
+          <div class="brand-mark" aria-hidden="true"></div>
           <div>
             <h1>${escapeHTML(APP_NAME)}</h1>
-            <p>${escapeHTML(ORG_NAME)}</p>
           </div>
         </button>
         <nav class="public-nav" aria-label="เมนูสาธารณะ">
           ${publicNavHTML()}
         </nav>
         <div class="public-header-actions">
-          <span class="badge ${state.source === 'google_sheet' ? 'api' : 'demo'}">${state.source === 'google_sheet' ? 'Google Sheet API' : 'Demo Mode'}</span>
           <button class="btn secondary" data-action="refresh">รีเฟรช</button>
           <button class="btn warning" data-action="go-admin">เข้าสู่ระบบเจ้าหน้าที่</button>
         </div>
@@ -269,15 +267,9 @@
     const topbar = document.getElementById('topbar');
     if (!topbar) return;
     if (!IS_ADMIN_APP) {
-      topbar.innerHTML = `<div class="public-hero">
+      topbar.innerHTML = `<div class="public-hero public-hero-clean">
         <div>
-          <div class="eyebrow">Public View</div>
           <h2>${titleMap[state.view] || 'ปฏิทินภาพรวมงาน'}</h2>
-          <p>แสดงข้อมูลกิจกรรมและงานประจำเดือนจาก Google Sheet โดยอ่านข้อมูลผ่าน Google Apps Script</p>
-        </div>
-        <div class="public-hero-summary">
-          <span>${state.events.length} รายการทั้งหมด</span>
-          <span>${monthEvents().length} รายการในเดือนนี้</span>
         </div>
       </div>`;
       return;
@@ -440,7 +432,11 @@
   function dayCell(date) {
     const iso = toISO(date);
     const currentMonth = date.getMonth() === state.monthDate.getMonth();
-    const items = state.events.filter(e => e.start_date <= iso && iso <= (e.end_date || e.start_date));
+    const items = filteredEvents().filter(e => {
+      const eventStart = normalizeDateOnly(e.start_date);
+      const eventEnd = normalizeDateOnly(e.end_date || e.start_date);
+      return eventStart && eventEnd && eventStart <= iso && iso <= eventEnd;
+    }).sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')) || String(a.start_time || '').localeCompare(String(b.start_time || '')));
     return `<div class="day ${currentMonth ? '' : 'off'} ${iso === todayISO() ? 'today' : ''}">
       <div class="day-num">${date.getDate()}</div>
       ${items.slice(0, 4).map(e => `<button class="chip ${e.status === 'ยกเลิก' ? 'cancel' : ''}" data-action="open-event" data-id="${escapeAttr(e.id)}">${escapeHTML(e.title)}</button>`).join('')}
@@ -946,6 +942,14 @@
   function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
   function fileToBase64(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || '').split(',')[1] || ''); reader.onerror = reject; reader.readAsDataURL(file); }); }
 
+  function normalizeDateOnly(value) {
+    if (!value) return '';
+    const text = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+    const date = new Date(text);
+    if (!Number.isNaN(date.getTime())) return toISO(date);
+    return text.slice(0, 10);
+  }
   function todayISO() { return new Intl.DateTimeFormat('sv-SE', { timeZone:TIMEZONE, year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date()); }
   function addDaysISO(days) { const d = new Date(); d.setDate(d.getDate() + days); return toISO(d); }
   function toISO(date) { return new Intl.DateTimeFormat('sv-SE', { timeZone:TIMEZONE, year:'numeric', month:'2-digit', day:'2-digit' }).format(date); }
@@ -962,7 +966,10 @@
     const value = String(iso).slice(0, 10);
     const parts = value.split('-').map(Number);
     if (!parts[0] || !parts[1]) return '-';
-    return monthName(parts[1] - 1).slice(0, 3);
+    return thaiMonthShort(parts[1] - 1);
+  }
+  function thaiMonthShort(index) {
+    return ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'][index] || '-';
   }
   function formatDate(iso) { if (!iso) return '-'; const [y,m,d] = String(iso).slice(0,10).split('-').map(Number); if (!y || !m || !d) return iso; return new Date(y,m-1,d).toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' }); }
   function formatDateTime(value) { if (!value) return '-'; const d = new Date(value); if (Number.isNaN(d.getTime())) return value; return d.toLocaleString('th-TH', { timeZone:TIMEZONE, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }); }

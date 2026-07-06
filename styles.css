@@ -55,3 +55,12 @@
   font-size:13px;
   line-height:1.55;
 }
+
+
+/* Public view clean update: hide highlighted label texts and keep layout compact */
+.brand-public .brand-mark::before{content:''}
+.brand-public .brand-mark{font-size:0}
+.public-hero-clean{align-items:center;justify-content:flex-start;padding:22px 24px}
+.public-hero-clean h2{margin:0;font-size:32px}
+.public-hero-clean .eyebrow,.public-hero-clean p,.public-hero-clean .public-hero-summary{display:none!important}
+@media(max-width:720px){.public-hero-clean h2{font-size:24px}}
